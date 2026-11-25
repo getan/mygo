@@ -57,7 +57,10 @@ func (s *ScrollState) Scrolling() bool { return s.glide != nil }
 // top of the view in place when a row above it changes height. It is for
 // layout measurements, not for a jump: unlike setting Y, it does not take
 // over from a wheel glide. The glide's target moves with the content, so a
-// notch already on its way continues instead of being cancelled.
+// notch already on its way continues instead of being cancelled. The
+// adjustment takes effect before the next build, when the app plans from
+// it: the frame in which it was measured keeps the content where it
+// planned it.
 func (s *ScrollState) AnchorBy(deltaY float32) {
 	if s == nil || deltaY == 0 {
 		return
@@ -84,6 +87,7 @@ func (s *ScrollState) AnchorBy(deltaY float32) {
 func (e *node) TrackScroll(s *ScrollState) *node {
 	if s != nil {
 		wrapElement(e).Bind(&s.Handle)
+		e.applyAnchor(s)
 	}
 	e.track = s
 	if e.adoptScroll() && e.first != nil {
@@ -185,8 +189,12 @@ func (e *node) adoptScroll() bool {
 	if t != nil && t.glide != nil {
 		e.glide(t)
 	}
-	if adoptTrackAnchor(st, t, e.c.rt.frame) {
-		return true
+	if t != nil && t.anchorY != 0 {
+		// A layout anchor applies before the next build, when the app plans
+		// from it: this frame's content stays where it planned it, rather
+		// than moving under it.
+		e.c.rt.animating = true
+		return false
 	}
 	if t == nil || t.X == float32(st.scrollX) && t.Y == float32(st.scrollY) {
 		return false
@@ -203,29 +211,29 @@ func (e *node) adoptScroll() bool {
 	return true
 }
 
-// adoptTrackAnchor applies a ScrollState.AnchorBy adjustment to the internal
-// offset before the normal app-takeover check. It keeps an active wheel glide
-// and moves its target by the same amount, so layout measurement does not
-// cancel wheel momentum or fight the next glide frame.
-func adoptTrackAnchor(st *state, t *ScrollState, frame uint64) bool {
+// applyAnchor applies the app's ScrollState.AnchorBy adjustment to the
+// element's offset before the frame builds, when the app plans from it. A
+// wheel glide moves with the content, so a notch on its way keeps its
+// remaining travel.
+func (e *node) applyAnchor(t *ScrollState) {
 	if t == nil || t.anchorY == 0 {
-		return false
+		return
 	}
+	st := e.st
 	delta := float64(t.anchorY)
 	t.anchorY = 0
-	old := st.scrollY
-	next := max(0, old+delta)
-	applied := next - old
+	next := max(0, st.scrollY+delta)
+	applied := next - st.scrollY
 	if applied == 0 {
-		return false
+		t.Y = float32(next)
+		return
 	}
-	st.beginMove(frame)
+	st.beginMove(e.c.rt.frame)
 	st.scrollY = next
 	t.Y = float32(next)
 	if st.wheel != nil {
 		st.wheel.shiftY(applied)
 	}
-	return true
 }
 
 // glide moves the offset of a ScrollTo on its way to the frame's time.

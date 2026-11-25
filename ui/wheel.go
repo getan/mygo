@@ -119,9 +119,12 @@ func (rt *engine) glideWheels(now time.Time) {
 		if s == nil || s.wheel == nil {
 			continue
 		}
-		if t := s.track; t != nil && !adoptTrackAnchor(s, t, rt.frame) &&
-			(t.X != float32(s.scrollX) || t.Y != float32(s.scrollY) || t.glide != nil) ||
-			s.list != nil && s.list.scrolled {
+		takeover := s.list != nil && s.list.scrolled
+		if t := s.track; t != nil && t.anchorY == 0 &&
+			(t.X != float32(s.scrollX) || t.Y != float32(s.scrollY) || t.glide != nil) {
+			takeover = true
+		}
+		if takeover {
 			// The app set the offset, or a ScrollTo, of its ScrollState
 			// or its ListState: it takes over.
 			s.wheel = nil

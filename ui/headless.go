@@ -542,6 +542,16 @@ func (t *Tester) FramePending() bool { return t.asked() }
 // Image returns the last frame.
 func (t *Tester) Image() *image.RGBA { return t.h.image() }
 
+// FullImage draws the last frame whole, as a window that drew it from
+// nothing would show it: the same pixels as Image when the incremental
+// drawing left nothing of the frames before.
+func (t *Tester) FullImage() *image.RGBA {
+	var r raster.Renderer
+	r.Render(&t.rt.scene)
+	m := &r.Image
+	return &image.RGBA{Pix: m.RGBA(), Stride: 4 * m.W, Rect: image.Rect(0, 0, m.W, m.H)}
+}
+
 // Find returns the box of the first element showing text s, or labeled s,
 // in the window's DIPs: zoomed (SetZoom), z times the content's.
 func (t *Tester) Find(s string) (Rect, bool) {

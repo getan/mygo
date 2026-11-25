@@ -45,3 +45,41 @@ func TestDirectScrollWriteStillStopsWheel(t *testing.T) {
 		t.Fatalf("direct write did not take over: %v", s.Y)
 	}
 }
+
+// An anchor measured while the view builds applies before the next build:
+// the frame that measured it shows its content where it planned it.
+func TestAnchorAppliesToTheNextBuild(t *testing.T) {
+	var s ScrollState
+	anchored := false
+	tt := coreNewTester(func(c *context) {
+		coreScroll(c).Fill().TrackScroll(&s).Children(func() {
+			coreBox(c).Height(1000).Shrink(0)
+			if s.Y == 10 && !anchored {
+				anchored = true
+				s.AnchorBy(5)
+			}
+		})
+	}, 200, 200)
+	tt.Frame()
+	scrolled := func() float64 {
+		for _, st := range tt.rt.states {
+			if st.track == &s {
+				return st.scrollY
+			}
+		}
+		return -1
+	}
+	s.Y = 10
+	// One frame only: the anchor measured while it builds applies to the
+	// next one, so this frame keeps the offset it planned with.
+	tt.frameAt = tt.Now()
+	tt.rt.runFrame()
+	if got := scrolled(); got != 10 {
+		t.Fatalf("the measuring frame scrolled to %v, want 10", got)
+	}
+	tt.frameAt = tt.Now()
+	tt.rt.runFrame()
+	if got := scrolled(); got != 15 {
+		t.Fatalf("the next frame scrolled to %v, want 15", got)
+	}
+}
