@@ -28,6 +28,17 @@ func (g *wheelGlide) ahead() (dx, dy float64) {
 	return g.x.target - g.doneX, g.y.target - g.doneY
 }
 
+// shiftY moves the whole wheel gesture by d, including the part already
+// applied, so a layout anchor that moved the content by d leaves the same
+// remaining wheel distance instead of applying that distance twice.
+func (g *wheelGlide) shiftY(d float64) {
+	if g == nil || d == 0 {
+		return
+	}
+	g.y.shift(d)
+	g.doneY += d
+}
+
 // wheelMoves reports whether a notch scrolling dx, dy moves container s
 // further than the notches on their way there already do.
 func wheelMoves(s *state, dx, dy float32) bool {
@@ -89,7 +100,8 @@ func (rt *engine) glideWheels(now time.Time) {
 		if s == nil || s.wheel == nil {
 			continue
 		}
-		if t := s.track; t != nil && (t.X != float32(s.scrollX) || t.Y != float32(s.scrollY) || t.glide != nil) ||
+		if t := s.track; t != nil && !adoptTrackAnchor(s, t, rt.frame) &&
+			(t.X != float32(s.scrollX) || t.Y != float32(s.scrollY) || t.glide != nil) ||
 			s.list != nil && s.list.scrolled {
 			// The app set the offset, or a ScrollTo, of its ScrollState
 			// or its ListState: it takes over.

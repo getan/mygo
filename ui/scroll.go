@@ -17,7 +17,8 @@ type ScrollState struct {
 	// out: Y is MaxY at the end. The container sets them.
 	MaxX, MaxY float32
 
-	glide *scrollGlide
+	glide   *scrollGlide
+	anchorY float32
 }
 
 // scrollGlide is a ScrollTo on its way: to x and y, as a says.
@@ -53,6 +54,20 @@ func (s *ScrollState) ScrollTo(x, y float32, a Animation) {
 
 // Scrolling reports whether a ScrollTo is on its way.
 func (s *ScrollState) Scrolling() bool { return s.glide != nil }
+
+// AnchorBy adjusts the content offset by deltaY to keep the content at the
+// top of the view in place when a row above it changes height. It is for
+// layout measurements, not for a jump: unlike setting Y, it does not take
+// over from a wheel glide. The glide's target moves with the content, so a
+// notch already on its way continues instead of being cancelled.
+func (s *ScrollState) AnchorBy(deltaY float32) {
+	if s == nil || deltaY == 0 {
+		return
+	}
+	old := s.Y
+	s.Y = max(0, s.Y+deltaY)
+	s.anchorY += s.Y - old
+}
 
 // TrackScroll keeps the scrolling of a scroll container (Scroll,
 // ScrollHorizontal, ScrollBoth, List) in *s: the container shows its
@@ -101,6 +116,9 @@ func (e *node) adoptScroll() bool {
 	if t != nil && t.glide != nil {
 		e.glide(t)
 	}
+	if adoptTrackAnchor(st, t, e.c.rt.frame) {
+		return true
+	}
 	if t == nil || t.X == float32(st.scrollX) && t.Y == float32(st.scrollY) {
 		return false
 	}
@@ -111,6 +129,31 @@ func (e *node) adoptScroll() bool {
 	}
 	if t.Y != float32(st.scrollY) {
 		st.scrollY = float64(t.Y)
+	}
+	return true
+}
+
+// adoptTrackAnchor applies a ScrollState.AnchorBy adjustment to the internal
+// offset before the normal app-takeover check. It keeps an active wheel glide
+// and moves its target by the same amount, so layout measurement does not
+// cancel wheel momentum or fight the next glide frame.
+func adoptTrackAnchor(st *state, t *ScrollState, frame uint64) bool {
+	if t == nil || t.anchorY == 0 {
+		return false
+	}
+	delta := float64(t.anchorY)
+	t.anchorY = 0
+	old := st.scrollY
+	next := max(0, old+delta)
+	applied := next - old
+	if applied == 0 {
+		return false
+	}
+	st.beginMove(frame)
+	st.scrollY = next
+	t.Y = float32(next)
+	if st.wheel != nil {
+		st.wheel.shiftY(applied)
 	}
 	return true
 }
