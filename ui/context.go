@@ -826,6 +826,9 @@ type state struct {
 	// wheel is the notches of a mouse wheel on their way through the
 	// content (wheelScroll).
 	wheel *wheelGlide
+	// flick is a precise scroll waiting to be applied at up to
+	// flickMaxSpeed (flickScroll, glideFlicks).
+	flick *flickScroll
 	// snap is where a container that snaps comes to rest (ScrollSnap),
 	// which its layout sets.
 	snap snapper

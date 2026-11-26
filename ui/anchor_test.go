@@ -3,6 +3,8 @@ package ui
 import (
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/internal/platform"
 )
 
 // AnchorBy is a layout correction, not an app jump: a wheel notch already
@@ -59,13 +61,62 @@ func TestSmoothFlickGlides(t *testing.T) {
 		})
 	}, 200, 200)
 	tt.Move(100, 100)
-	tt.Scroll(100, 100, 0, 120)
+	tt.rt.event(platform.SurfaceEvent{Kind: platform.PointerScroll, X: 100, Y: 100, DY: 120, Precise: true})
 	if s.Y != 0 {
 		t.Fatalf("the flick scrolled at once to %v", s.Y)
 	}
 	tt.Advance(time.Second)
-	if s.Y != 120 {
+	if abs32(s.Y-120) > 0.01 {
 		t.Fatalf("the flick ended at %v, want 120", s.Y)
+	}
+}
+
+// A small precise event during a flick's glide joins it, rather than
+// cancelling the glide and dropping its remaining travel.
+func TestSmallScrollJoinsActiveFlick(t *testing.T) {
+	old := smoothFlicks
+	smoothFlicks = true
+	defer func() { smoothFlicks = old }()
+	var s ScrollState
+	tt := coreNewTester(func(c *context) {
+		coreScroll(c).Fill().TrackScroll(&s).Children(func() {
+			coreBox(c).Height(2000).Shrink(0)
+		})
+	}, 200, 200)
+	tt.Move(100, 100)
+	tt.rt.event(platform.SurfaceEvent{Kind: platform.PointerScroll, X: 100, Y: 100, DY: 120, Precise: true})
+	tt.Advance(16 * time.Millisecond)
+	tt.rt.event(platform.SurfaceEvent{Kind: platform.PointerScroll, X: 100, Y: 100, DY: 10, Precise: true})
+	tt.Advance(time.Second)
+	if abs32(s.Y-130) > 0.01 {
+		t.Fatalf("the small event dropped or doubled travel: at %v, want 130", s.Y)
+	}
+}
+
+// A flick advances at most flickMaxSpeed in one frame, however large the
+// event that started it.
+func TestFlickMovesAtMostMaxSpeedPerFrame(t *testing.T) {
+	old := smoothFlicks
+	smoothFlicks = true
+	defer func() { smoothFlicks = old }()
+	var s ScrollState
+	tt := coreNewTester(func(c *context) {
+		coreScroll(c).Fill().TrackScroll(&s).Children(func() {
+			coreBox(c).Height(2000).Shrink(0)
+		})
+	}, 200, 200)
+	tt.Move(100, 100)
+	tt.rt.event(platform.SurfaceEvent{Kind: platform.PointerScroll, X: 100, Y: 100, DY: 300, Precise: true})
+	if s.Y != 0 {
+		t.Fatalf("the flick moved at once to %v", s.Y)
+	}
+	tt.Advance(time.Second / 60)
+	if s.Y <= 0 || s.Y > flickMaxSpeed*0.020+0.5 {
+		t.Fatalf("one frame moved %v, want at most %v", s.Y, flickMaxSpeed*0.020)
+	}
+	tt.Advance(time.Second)
+	if abs32(s.Y-300) > 0.01 {
+		t.Fatalf("the flick ended at %v, want 300", s.Y)
 	}
 }
 

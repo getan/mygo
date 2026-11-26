@@ -68,6 +68,91 @@ func wheelMoves(s *state, dx, dy float32) bool {
 // wheelScroll scrolls container s by a notch of dx, dy smoothly, on top
 // of the notches on their way there.
 func (rt *engine) wheelScroll(s *state, dx, dy float32) {
+	rt.wheelScrollWith(s, dx, dy, wheelAnimation)
+}
+
+// flickScroll is precise travel waiting to be applied at up to
+// flickMaxSpeed, with the time it last moved.
+type flickScroll struct {
+	x, y float64
+	at   time.Time
+}
+
+// flickScroll adds a precise scroll to s' pending travel. glideFlicks
+// applies it over the frames that follow at a constant speed: no animation
+// is restarted for each event, so the content never jolts.
+func (rt *engine) flickScroll(s *state, dx, dy float32) {
+	f := s.flick
+	if f == nil {
+		f = &flickScroll{at: rt.now()}
+		s.flick = f
+	}
+	f.x += float64(dx)
+	f.y += float64(dy)
+	if !slices.Contains(rt.flicking, s.id) {
+		rt.flicking = append(rt.flicking, s.id)
+	}
+	rt.requestFrame()
+}
+
+// glideFlicks applies each container's pending precise travel at no more
+// than flickMaxSpeed, the velocity held from frame to frame.
+func (rt *engine) glideFlicks(now time.Time) {
+	kept := rt.flicking[:0]
+	for _, id := range rt.flicking {
+		s := rt.states[id]
+		if s == nil || s.flick == nil {
+			continue
+		}
+		f := s.flick
+		dt := now.Sub(f.at)
+		if dt <= 0 {
+			dt = time.Second / 120
+		}
+		// A stalled frame must not turn into one huge jump.
+		if dt > 20*time.Millisecond {
+			dt = 20 * time.Millisecond
+		}
+		maxStep := flickMaxSpeed * dt.Seconds()
+		dx, dy := clampFlick(f.x, maxStep), clampFlick(f.y, maxStep)
+		f.x, f.y, f.at = f.x-dx, f.y-dy, now
+		if dx != 0 || dy != 0 {
+			if !scrollBy(s, float32(dx), float32(dy)) {
+				// At the end of the content, or there.
+				s.flick = nil
+				continue
+			}
+			rt.animating = true
+		}
+		if absFlick(f.x)+absFlick(f.y) > 0.5 {
+			kept = append(kept, id)
+		} else {
+			s.flick = nil
+		}
+	}
+	rt.flicking = kept
+}
+
+func clampFlick(v, limit float64) float64 {
+	if v > limit {
+		return limit
+	}
+	if v < -limit {
+		return -limit
+	}
+	return v
+}
+
+func absFlick(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// wheelScrollWith scrolls s by dx, dy over a, as wheelScroll does with the
+// wheel's animation.
+func (rt *engine) wheelScrollWith(s *state, dx, dy float32, a Animation) {
 	now := rt.now()
 	g := s.wheel
 	if g == nil || g.reveal {
@@ -87,10 +172,10 @@ func (rt *engine) wheelScroll(s *state, dx, dy float32) {
 	g.x.advance(now)
 	g.y.advance(now)
 	if dx != 0 {
-		g.x.retarget(wheelTurn(&g.x, dx, float64(s.scrollX), &g.doneX), wheelAnimation)
+		g.x.retarget(wheelTurn(&g.x, dx, float64(s.scrollX), &g.doneX), a)
 	}
 	if dy != 0 {
-		g.y.retarget(wheelTurn(&g.y, dy, float64(s.scrollY), &g.doneY), wheelAnimation)
+		g.y.retarget(wheelTurn(&g.y, dy, float64(s.scrollY), &g.doneY), a)
 	}
 	rt.requestFrame()
 }

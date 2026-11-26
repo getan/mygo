@@ -16,6 +16,11 @@ import (
 // line or more in a frame, which the eye sees as a trail.
 var smoothFlicks = os.Getenv("MYGO_SCROLL_SMOOTH") == "1"
 
+// flickMaxSpeed caps how fast a precise flick moves, in DIPs a second: at
+// 1,400 a 60 Hz frame moves less than a text line, so no frame holds two
+// copies of a line far enough apart to read as a trail.
+const flickMaxSpeed = 1400
+
 // SetSmoothFlicks makes fast flicks of a precise device (a trackpad) glide
 // like the notches of a wheel, spreading their travel over a few frames
 // rather than drawing a line or more of movement in one. Apps call it
@@ -827,7 +832,7 @@ func (rt *engine) scroll(dx, dy float32, mods Modifiers, precise, momentum bool)
 	// A wheel's notches glide, as browsers scroll them; a touchpad's
 	// small moves already follow the fingers.
 	large := abs(dx) > 32 || abs(dy) > 32
-	glide := !rt.preferences().ReduceMotion && (!precise || smoothFlicks && large)
+	reduce := rt.preferences().ReduceMotion
 	for _, id := range chain {
 		s := rt.states[id]
 		if s == nil {
@@ -846,7 +851,14 @@ func (rt *engine) scroll(dx, dy float32, mods Modifiers, precise, momentum bool)
 				continue
 			}
 		}
-		if glide {
+		if precise && smoothFlicks && !reduce && wheelMoves(s, sx, sy) {
+			rt.flickScroll(s, sx, sy)
+			return
+		}
+		// While a flick glides, every precise event joins it: scrolling one
+		// at once would cancel the glide and drop its remaining travel, which
+		// reads as a jolt.
+		if !reduce && (!precise || smoothFlicks && (large || s.wheel != nil)) {
 			if wheelMoves(s, sx, sy) {
 				rt.wheelScroll(s, sx, sy)
 				return

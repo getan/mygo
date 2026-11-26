@@ -542,6 +542,9 @@ type engine struct {
 	// wheeling are the elements of the scroll containers that the notches
 	// of a mouse wheel scroll smoothly (glideWheels).
 	wheeling []uint64
+	// flicking are the scroll containers with precise travel waiting to be
+	// applied at up to flickMaxSpeed (glideFlicks).
+	flicking []uint64
 	// snapping are the elements of the scroll containers that snap that
 	// are on their way to rest, or wait for the user's scrolling to settle
 	// (glideSnaps).
@@ -677,6 +680,7 @@ func (rt *engine) runFrame() {
 	rt.repaintRate, rt.repaintFull, rt.untracked = 0, false, false
 	rt.routeKeys()
 	rt.glideWheels(now)
+	rt.glideFlicks(now)
 	rt.glideSnaps(now)
 	if rt.drag != nil {
 		// The source's element is this frame's, if it builds one.
