@@ -2,12 +2,25 @@ package ui
 
 import (
 	"math/bits"
+	"os"
 	"runtime"
 	"slices"
 	"time"
 
 	"github.com/egoist/mygo/internal/platform"
 )
+
+// smoothFlicks makes a fast flick of a precise device (a trackpad) glide
+// like the notches of a wheel, spreading its travel over a few frames, as
+// MYGO_SCROLL_SMOOTH=1 asks: drawn at once, a flick moves the content by a
+// line or more in a frame, which the eye sees as a trail.
+var smoothFlicks = os.Getenv("MYGO_SCROLL_SMOOTH") == "1"
+
+// SetSmoothFlicks makes fast flicks of a precise device (a trackpad) glide
+// like the notches of a wheel, spreading their travel over a few frames
+// rather than drawing a line or more of movement in one. Apps call it
+// before their first frame; MYGO_SCROLL_SMOOTH=1 sets it at start.
+func SetSmoothFlicks(on bool) { smoothFlicks = on }
 
 // event handles a surface event on the main thread. It reports whether
 // an element takes files dragged over or dropped at the event's position,
@@ -813,7 +826,8 @@ func (rt *engine) scroll(dx, dy float32, mods Modifiers, precise, momentum bool)
 	}
 	// A wheel's notches glide, as browsers scroll them; a touchpad's
 	// small moves already follow the fingers.
-	glide := !precise && !rt.preferences().ReduceMotion
+	large := abs(dx) > 32 || abs(dy) > 32
+	glide := !rt.preferences().ReduceMotion && (!precise || smoothFlicks && large)
 	for _, id := range chain {
 		s := rt.states[id]
 		if s == nil {

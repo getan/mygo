@@ -46,6 +46,29 @@ func TestDirectScrollWriteStillStopsWheel(t *testing.T) {
 	}
 }
 
+// A fast flick of a trackpad glides as MYGO_SCROLL_SMOOTH asks, so one
+// frame does not move the content by a line or more.
+func TestSmoothFlickGlides(t *testing.T) {
+	old := smoothFlicks
+	smoothFlicks = true
+	defer func() { smoothFlicks = old }()
+	var s ScrollState
+	tt := coreNewTester(func(c *context) {
+		coreScroll(c).Fill().TrackScroll(&s).Children(func() {
+			coreBox(c).Height(1000).Shrink(0)
+		})
+	}, 200, 200)
+	tt.Move(100, 100)
+	tt.Scroll(100, 100, 0, 120)
+	if s.Y != 0 {
+		t.Fatalf("the flick scrolled at once to %v", s.Y)
+	}
+	tt.Advance(time.Second)
+	if s.Y != 120 {
+		t.Fatalf("the flick ended at %v, want 120", s.Y)
+	}
+}
+
 // An anchor measured while the view builds applies before the next build:
 // the frame that measured it shows its content where it planned it.
 func TestAnchorAppliesToTheNextBuild(t *testing.T) {
